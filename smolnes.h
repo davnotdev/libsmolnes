@@ -6,7 +6,7 @@
 //  Initialize smolnes.
 //
 //      `p_button_states` must outlive smolnes and contain 8 booleans
-//      representing button down in the following order: A, B Select, Start,
+//      representing button down in the following order: A, B, Select, Start,
 //      Dpad Up, Dpad Down, Dpad Left, Dpad Right
 //
 void smolnes_init(const char *p_rom, uint32_t p_rom_size,
