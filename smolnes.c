@@ -1,5 +1,4 @@
 #include <stdint.h>
-#include <string.h>
 
 #define PULL mem(++S, 1, 0, 0)
 #define PUSH(x) mem(S--, 1, x, 1);
@@ -226,7 +225,9 @@ uint8_t read_pc() {
 uint8_t set_nz(uint8_t val) { return P = P & ~130 | val & 128 | !val * 2; }
 
 void smolnes_init(const char* p_rom, uint64_t rom_size, uint8_t p_button_states[8]) {
-  memcpy((char*)rombuf, p_rom, rom_size);
+  for (int i = 0; i < rom_size; i++) {
+    rombuf[i] = p_rom[i];
+  }
 
   // Start PRG0 after 16-byte header.
   rom = rombuf + 16;
