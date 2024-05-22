@@ -1,5 +1,10 @@
 #include <stdint.h>
 
+//  This will be enough to run Kirby's Adventure, on
+#ifndef MAX_ROM_SIZE
+#define MAX_ROM_SIZE 1024 * 800
+#endif
+
 #define PULL mem(++S, 1, 0, 0)
 #define PUSH(x) mem(S--, 1, x, 1);
 
@@ -42,7 +47,7 @@ uint8_t *rom, *chrrom,                // Points to the start of PRG/CHR ROM
     mmc3_chrprg[8], mmc3_bits,         // Mapper 4 (MMC3) registers
     mmc3_irq, mmc3_latch,              //
     chrbank0, chrbank1, prgbank,       // Current PRG/CHR bank
-    rombuf[1024 * 1024],               // Buffer to read ROM file into
+    rombuf[MAX_ROM_SIZE],              // Buffer to read ROM file into
     *key_state;
 
 uint16_t scany,          // Scanline Y

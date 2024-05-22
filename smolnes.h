@@ -5,6 +5,10 @@
 
 //  Initialize smolnes.
 //
+//      `p_rom_size` must not be greater than 819200 bytes.
+//      This rom size is enough space for any official NES games.
+//      You can override this with `#define MAX_ROM_SIZE XXX` in `smolnes.c`.
+//
 //      `p_button_states` must outlive smolnes and contain 8 booleans
 //      representing button down in the following order: A, B, Select, Start,
 //      Dpad Up, Dpad Down, Dpad Left, Dpad Right
