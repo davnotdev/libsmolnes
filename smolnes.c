@@ -57,6 +57,10 @@ uint16_t scany,          // Scanline Y
 
 int shift_at = 0;
 
+void goto_add();
+void goto_cmp();
+void goto_store();
+
 // Read a byte from CHR ROM or CHR RAM.
 uint8_t *get_chr_byte(uint16_t a) {
   return &chrrom[chr[a >> chrbits] << chrbits | a & (1 << chrbits) - 1];
@@ -466,13 +470,10 @@ void smolnes_tick(void(*render_callback)(uint16_t[256 * 224], void*), void* data
 
     OP16(225) // SBC
       val = ~val;
-      goto add;
+      goto_add();
 
     OP16(97) // ADC
-    add:
-      sum = A + val + (P & 1);
-      P = P & ~65 | sum > 255 | (~(A ^ val) & (val ^ sum) & 128) / 2;
-      set_nz(A = sum);
+      goto_add();
 
     OP16(2) // ASL
       result = val * 2;
@@ -527,19 +528,15 @@ void smolnes_tick(void(*render_callback)(uint16_t[256 * 224], void*), void* data
     OP16(161) set_nz(A = val); // LDA
     OP16(162) set_nz(X = val); // LDX
 
-    OP16(128) result = Y; goto store; // STY
-    OP16(129) result = A; goto store; // STA
+    OP16(128) result = Y; goto_store(); // STY
+    OP16(129) result = A; goto_store(); // STA
     OP16(130) result = X;             // STX
+      goto_store();
 
-    store:
-      mem(addr_lo, addr_hi, result, 1);
-
-    OP16(192) result = Y; goto cmp; // CPY
-    OP16(193) result = A; goto cmp; // CMP
+    OP16(192) result = Y; goto_cmp(); // CPY
+    OP16(193) result = A; goto_cmp(); // CMP
     OP16(224) result = X;           // CPX
-    cmp:
-      P = P & ~1 | result >= val;
-      set_nz(result - val);
+      goto_cmp();
       break;
     }
   }
@@ -669,4 +666,19 @@ void smolnes_tick(void(*render_callback)(uint16_t[256 * 224], void*), void* data
     // frame. Scanline 261 is represented as -1.
     ++dot == 341 ? dot = 0, scany++, scany %= 262 : 0;
   }
+}
+
+void goto_add() {
+  sum = A + val + (P & 1);
+  P = P & ~65 | sum > 255 | (~(A ^ val) & (val ^ sum) & 128) / 2;
+  set_nz(A = sum);
+}
+
+void goto_cmp() {
+  P = P & ~1 | result >= val;
+  set_nz(result - val);
+}
+
+void goto_store() {
+  mem(addr_lo, addr_hi, result, 1);
 }
