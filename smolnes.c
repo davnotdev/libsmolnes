@@ -8,11 +8,6 @@
 #define PULL mem(++S, 1, 0, 0)
 #define PUSH(x) mem(S--, 1, x, 1);
 
-#define OP16(x)                                                                \
-  break;                                                                       \
-  case x:                                                                      \
-  case x + 16:
-
 uint8_t *rom, *chrrom,                // Points to the start of PRG/CHR ROM
     prg[4], chr[8],                   // Current PRG/CHR banks
     prgbits = 14, chrbits = 12,       // Number of bits per PRG/CHR bank
@@ -323,7 +318,9 @@ void smolnes_tick(void(*render_callback)(uint16_t[256 * 224], void*), void* data
           cycles++, PCL += (int)val;
         }
 
-        OP16(8)
+        break;
+      case 8:
+      case 8 + 16:
           switch (opcode >>= 4) {
             case 0: // PHP
               PUSH(P | 48)
@@ -370,7 +367,9 @@ void smolnes_tick(void(*render_callback)(uint16_t[256 * 224], void*), void* data
               break;
           }
 
-        OP16(10)
+          break;
+      case 10:
+      case 10 + 16:
           switch (opcode >> 4) {
             case 8: // TXA
               set_nz(A = X);
@@ -633,42 +632,42 @@ void goto_opcode() {
 
 void goto_nomemop() {
   switch (opcode & 243) {
-    OP16(1) set_nz(A |= val);  // ORA
-    OP16(33) set_nz(A &= val); // AND
-    OP16(65) set_nz(A ^= val); // EOR
+    break; case 1: case 1 + 16: set_nz(A |= val);  // ORA
+    break; case 33: case 33 + 16: set_nz(A &= val); // AND
+    break; case 65: case 65 + 16: set_nz(A ^= val); // EOR
 
-    OP16(225) // SBC
+    break; case 225: case 225 + 16: // SBC
       val = ~val;
     goto_add();
 
-    OP16(97) // ADC
+    break; case 97: case 97 + 16: // ADC
       goto_add();
 
-    OP16(2) // ASL
+    break; case 2: case 2 + 16: // ASL
       result = val * 2;
     P = P & ~1 | val / 128;
     goto_memop();
 
-    OP16(34) // ROL
+    break; case 34: case 34 + 16: // ROL
       result = val * 2 | P & 1;
     P = P & ~1 | val / 128;
     goto_memop();
 
-    OP16(66) // LSR
+    break; case 66: case 66 + 16: // LSR
       result = val / 2;
     P = P & ~1 | val & 1;
     goto_memop();
 
-    OP16(98) // ROR
+    break; case 98: case 98 + 16: // ROR
       result = val / 2 | P << 7;
     P = P & ~1 | val & 1;
     goto_memop();
 
-    OP16(194) // DEC
+    break; case 194: case 194 + 16: // DEC
       result = val - 1;
     goto_memop();
 
-    OP16(226) // INC
+    break; case 226: case 226 + 16: // INC
       result = val + 1;
     goto_memop();
     break;
@@ -688,18 +687,18 @@ void goto_nomemop() {
     PCH = mem(addr_lo + 1, addr_hi, 0, 0);
     cycles++;
 
-    OP16(160) set_nz(Y = val); // LDY
-    OP16(161) set_nz(A = val); // LDA
-    OP16(162) set_nz(X = val); // LDX
+    break; case 160: case 160 + 16: set_nz(Y = val); // LDY
+    break; case 161: case 161 + 16: set_nz(A = val); // LDA
+    break; case 162: case 162 + 16: set_nz(X = val); // LDX
 
-    OP16(128) result = Y; goto_store(); // STY
-    OP16(129) result = A; goto_store(); // STA
-    OP16(130) result = X;             // STX
+    break; case 128: case 128 + 16: result = Y; goto_store(); // STY
+    break; case 129: case 129 + 16: result = A; goto_store(); // STA
+    break; case 130: case 130 + 16: result = X;             // STX
     goto_store();
 
-    OP16(192) result = Y; goto_cmp(); // CPY
-    OP16(193) result = A; goto_cmp(); // CMP
-    OP16(224) result = X;           // CPX
+    break; case 192: case 192 + 16: result = Y; goto_cmp(); // CPY
+    break; case 193: case 193 + 16: result = A; goto_cmp(); // CMP
+    break; case 224: case 224 + 16: result = X;           // CPX
     goto_cmp();
     break;
   }
