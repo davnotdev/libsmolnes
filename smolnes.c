@@ -529,12 +529,10 @@ void smolnes_tick(void(*render_callback)(uint16_t[256 * 224], void*), void* data
                           palette = 16 | sprite[2] * 4 & 12 : 0;
                     // Maybe set sprite0 hit flag.
                     sprite == oam &&color ? ppustatus |= 64 : 0;
-                    goto found_sprite;
+                    break;
                   }
                 }
               }
-          found_sprite:
-
             // Write pixel to framebuffer. Always use palette 0 for color 0.
             // BGR565 palette is used instead of RGBA32 to reduce source code
             // size.
