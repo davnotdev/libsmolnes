@@ -66,6 +66,8 @@ void goto_cross();
 void goto_opcode();
 void goto_nomemop();
 
+void goto_nmi_irq();
+
 // Read a byte from CHR ROM or CHR RAM.
 uint8_t *get_chr_byte(uint16_t a) {
   return &chrrom[chr[a >> chrbits] << chrbits | a & (1 << chrbits) - 1];
@@ -264,209 +266,206 @@ void smolnes_init(const char* p_rom, uint64_t rom_size, uint8_t p_button_states[
 
 void smolnes_tick(void(*render_callback)(uint16_t[256 * 224], void*), void* data) {
   cycles = nomem = 0;
-  if (nmi_irq)
-    goto nmi_irq;
-
-  opcode = read_pc();
-  switch (opcode & 31) {
-  case 0:
-    if (opcode & 128) { // LDY/CPY/CPX imm
-      read_pc();
-      nomem = 1;
-      goto_nomemop();
-      break;
-    }
-
-    switch (opcode >> 5) {
-    case 0: // BRK or nmi_irq
-      !++PCL ? ++PCH : 0;
-    nmi_irq:
-      PUSH(PCH)
-      PUSH(PCL)
-      PUSH(P | 32)
-      // BRK/IRQ vector is $ffff, NMI vector is $fffa
-      PCL = mem(~1 - (nmi_irq & 4), ~0, 0, 0);
-      PCH = mem(~0 - (nmi_irq & 4), ~0, 0, 0);
-      nmi_irq = 0;
-      cycles++;
-      break;
-
-    case 1: // JSR
-      result = read_pc();
-      PUSH(PCH)
-      PUSH(PCL)
-      PCH = read_pc();
-      PCL = result;
-      break;
-
-    case 2: // RTI
-      P = PULL & ~32;
-      PCL = PULL;
-      PCH = PULL;
-      break;
-
-    case 3: // RTS
-      PCL = PULL;
-      PCH = PULL;
-      !++PCL ? ++PCH : 0;
-      break;
-    }
-
+  if (nmi_irq) {
+    goto_nmi_irq();
     cycles += 4;
-    break;
+  }
+  else {
+    switch (opcode & 31) {
+      case 0:
+        if (opcode & 128) { // LDY/CPY/CPX imm
+          read_pc();
+          nomem = 1;
+          goto_nomemop();
+          break;
+        }
 
-  case 16: // BPL, BMI, BVC, BVS, BCC, BCS, BNE, BEQ
-    read_pc();
-    if (!(P & mask[opcode >> 6 & 3]) ^ opcode / 32 & 1) {
-      if (cross = PCL + (int8_t)val >> 8)
-        PCH += cross, cycles++;
-      cycles++, PCL += (int)val;
+        switch (opcode >> 5) {
+          case 0: // BRK or nmi_irq
+            !++PCL ? ++PCH : 0;
+            goto_nmi_irq();
+            break;
+
+          case 1: // JSR
+            result = read_pc();
+            PUSH(PCH)
+              PUSH(PCL)
+              PCH = read_pc();
+            PCL = result;
+            break;
+
+          case 2: // RTI
+            P = PULL & ~32;
+            PCL = PULL;
+            PCH = PULL;
+            break;
+
+          case 3: // RTS
+            PCL = PULL;
+            PCH = PULL;
+            !++PCL ? ++PCH : 0;
+            break;
+        }
+
+        cycles += 4;
+        break;
+
+      case 16: // BPL, BMI, BVC, BVS, BCC, BCS, BNE, BEQ
+        read_pc();
+        if (!(P & mask[opcode >> 6 & 3]) ^ opcode / 32 & 1) {
+          if (cross = PCL + (int8_t)val >> 8)
+            PCH += cross, cycles++;
+          cycles++, PCL += (int)val;
+        }
+
+        OP16(8)
+          switch (opcode >>= 4) {
+            case 0: // PHP
+              PUSH(P | 48)
+                cycles++;
+              break;
+
+            case 2: // PLP
+              P = PULL & ~16;
+              cycles += 2;
+              break;
+
+            case 4: // PHA
+              PUSH(A)
+                cycles++;
+              break;
+
+            case 6: // PLA
+              set_nz(A = PULL);
+              cycles += 2;
+              break;
+
+            case 8: // DEY
+              set_nz(--Y);
+              break;
+
+            case 9: // TYA
+              set_nz(A = Y);
+              break;
+
+            case 10: // TAY
+              set_nz(Y = A);
+              break;
+
+            case 12: // INY
+              set_nz(++Y);
+              break;
+
+            case 14: // INX
+              set_nz(++X);
+              break;
+
+            default: // CLC, SEC, CLI, SEI, CLV, CLD, SED
+              P = P & ~mask[opcode + 3] | mask[opcode + 4];
+              break;
+          }
+
+        OP16(10)
+          switch (opcode >> 4) {
+            case 8: // TXA
+              set_nz(A = X);
+              break;
+
+            case 9: // TXS
+              S = X;
+              break;
+
+            case 10: // TAX
+              set_nz(X = A);
+              break;
+
+            case 11: // TSX
+              set_nz(X = S);
+              break;
+
+            case 12: // DEX
+              set_nz(--X);
+              break;
+
+            case 14: // NOP
+              break;
+
+            default: // ASL/ROL/LSR/ROR A
+              nomem = 1;
+              val = A;
+              goto_nomemop();
+          }
+        break;
+
+      case 1: // X-indexed, indirect
+        read_pc();
+        val += X;
+        addr_lo = mem(val, 0, 0, 0);
+        addr_hi = mem(val + 1, 0, 0, 0);
+        cycles += 4;
+        goto_opcode();
+        break;
+
+      case 4: case 5: case 6: // Zeropage
+        addr_lo = read_pc();
+        addr_hi = 0;
+        cycles++;
+        goto_opcode();
+        break;
+
+      case 2: case 9: // Immediate
+        read_pc();
+        nomem = 1;
+        goto_nomemop();
+        break;
+
+      case 12: case 13: case 14: // Absolute
+        addr_lo = read_pc();
+        addr_hi = read_pc();
+        cycles += 2;
+        goto_opcode();
+        break; 
+
+      case 17: // Zeropage, Y-indexed
+        addr_lo = mem(read_pc(), 0, 0, 0);
+        addr_hi = mem(val + 1, 0, 0, 0);
+        val = Y;
+        tmp = opcode == 145; // STA always uses extra cycle.
+        cycles++;
+        goto_cross();
+        break;
+
+      case 20: case 21: case 22: // Zeropage, X-indexed
+        addr_lo = read_pc() + ((opcode & 214) == 150 ? Y : X); // LDX/STX use Y
+        addr_hi = 0;
+        cycles += 2;
+        goto_opcode();
+        break;
+
+      case 25: // Absolute, Y-indexed.
+        addr_lo = read_pc();
+        addr_hi = read_pc();
+        val = Y;
+        tmp = opcode == 153; // STA always uses extra cycle.
+        goto_cross();
+        break;
+
+      case 28: case 29: case 30: // Absolute, X-indexed.
+        addr_lo = read_pc();
+        addr_hi = read_pc();
+        val = opcode == 190 ? Y : X; // LDX uses Y
+        tmp = opcode == 157 ||      // STA always uses extra cycle.
+                                    // ASL/ROL/LSR/ROR/INC/DEC all uses extra cycle.
+          opcode % 16 == 14 && opcode != 190;
+
+        goto_cross();
     }
 
-  OP16(8)
-    switch (opcode >>= 4) {
-    case 0: // PHP
-      PUSH(P | 48)
-      cycles++;
-      break;
 
-    case 2: // PLP
-      P = PULL & ~16;
-      cycles += 2;
-      break;
-
-    case 4: // PHA
-      PUSH(A)
-      cycles++;
-      break;
-
-    case 6: // PLA
-      set_nz(A = PULL);
-      cycles += 2;
-      break;
-
-    case 8: // DEY
-      set_nz(--Y);
-      break;
-
-    case 9: // TYA
-      set_nz(A = Y);
-      break;
-
-    case 10: // TAY
-      set_nz(Y = A);
-      break;
-
-    case 12: // INY
-      set_nz(++Y);
-      break;
-
-    case 14: // INX
-      set_nz(++X);
-      break;
-
-    default: // CLC, SEC, CLI, SEI, CLV, CLD, SED
-      P = P & ~mask[opcode + 3] | mask[opcode + 4];
-      break;
-    }
-
-  OP16(10)
-    switch (opcode >> 4) {
-    case 8: // TXA
-      set_nz(A = X);
-      break;
-
-    case 9: // TXS
-      S = X;
-      break;
-
-    case 10: // TAX
-      set_nz(X = A);
-      break;
-
-    case 11: // TSX
-      set_nz(X = S);
-      break;
-
-    case 12: // DEX
-      set_nz(--X);
-      break;
-
-    case 14: // NOP
-      break;
-
-    default: // ASL/ROL/LSR/ROR A
-      nomem = 1;
-      val = A;
-      goto_nomemop();
-    }
-    break;
-
-  case 1: // X-indexed, indirect
-    read_pc();
-    val += X;
-    addr_lo = mem(val, 0, 0, 0);
-    addr_hi = mem(val + 1, 0, 0, 0);
-    cycles += 4;
-    goto_opcode();
-    break;
-
-  case 4: case 5: case 6: // Zeropage
-    addr_lo = read_pc();
-    addr_hi = 0;
-    cycles++;
-    goto_opcode();
-    break;
-
-  case 2: case 9: // Immediate
-    read_pc();
-    nomem = 1;
-    goto_nomemop();
-    break;
-
-  case 12: case 13: case 14: // Absolute
-    addr_lo = read_pc();
-    addr_hi = read_pc();
-    cycles += 2;
-    goto_opcode();
-    break; 
-
-  case 17: // Zeropage, Y-indexed
-    addr_lo = mem(read_pc(), 0, 0, 0);
-    addr_hi = mem(val + 1, 0, 0, 0);
-    val = Y;
-    tmp = opcode == 145; // STA always uses extra cycle.
-    cycles++;
-    goto_cross();
-    break;
-
-  case 20: case 21: case 22: // Zeropage, X-indexed
-    addr_lo = read_pc() + ((opcode & 214) == 150 ? Y : X); // LDX/STX use Y
-    addr_hi = 0;
-    cycles += 2;
-    goto_opcode();
-    break;
-
-  case 25: // Absolute, Y-indexed.
-    addr_lo = read_pc();
-    addr_hi = read_pc();
-    val = Y;
-    tmp = opcode == 153; // STA always uses extra cycle.
-    goto_cross();
-    break;
-
-  case 28: case 29: case 30: // Absolute, X-indexed.
-    addr_lo = read_pc();
-    addr_hi = read_pc();
-    val = opcode == 190 ? Y : X; // LDX uses Y
-    tmp = opcode == 157 ||      // STA always uses extra cycle.
-                            // ASL/ROL/LSR/ROR/INC/DEC all uses extra cycle.
-           opcode % 16 == 14 && opcode != 190;
-
-    goto_cross();
   }
 
-  // Update PPU, which runs 3 times faster than CPU. Each CPU instruction
+  opcode = read_pc();
+    // Update PPU, which runs 3 times faster than CPU. Each CPU instruction
   // takes at least 2 cycles.
   for (tmp = cycles * 3 + 6; tmp--;) {
     if (ppumask & 24) { // If background or sprites are enabled.
@@ -701,4 +700,15 @@ void goto_nomemop() {
     goto_cmp();
     break;
   }
+}
+
+void goto_nmi_irq() {
+  PUSH(PCH)
+  PUSH(PCL)
+  PUSH(P | 32)
+  // BRK/IRQ vector is $ffff, NMI vector is $fffa
+  PCL = mem(~1 - (nmi_irq & 4), ~0, 0, 0);
+  PCH = mem(~0 - (nmi_irq & 4), ~0, 0, 0);
+  nmi_irq = 0;
+  cycles++;
 }
