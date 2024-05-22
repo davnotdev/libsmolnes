@@ -60,6 +60,7 @@ int shift_at = 0;
 void goto_add();
 void goto_cmp();
 void goto_store();
+void goto_memop();
 
 // Read a byte from CHR ROM or CHR RAM.
 uint8_t *get_chr_byte(uint16_t a) {
@@ -478,35 +479,30 @@ void smolnes_tick(void(*render_callback)(uint16_t[256 * 224], void*), void* data
     OP16(2) // ASL
       result = val * 2;
       P = P & ~1 | val / 128;
-      goto memop;
+      goto_memop();
 
     OP16(34) // ROL
       result = val * 2 | P & 1;
       P = P & ~1 | val / 128;
-      goto memop;
+      goto_memop();
 
     OP16(66) // LSR
       result = val / 2;
       P = P & ~1 | val & 1;
-      goto memop;
+      goto_memop();
 
     OP16(98) // ROR
       result = val / 2 | P << 7;
       P = P & ~1 | val & 1;
-      goto memop;
+      goto_memop();
 
     OP16(194) // DEC
       result = val - 1;
-      goto memop;
+      goto_memop();
 
     OP16(226) // INC
       result = val + 1;
-      // fallthrough
-
-    memop:
-      set_nz(result);
-      // Write result to A or back to memory.
-      nomem ? A = result : (cycles += 2, mem(addr_lo, addr_hi, result, 1));
+      goto_memop();
       break;
 
     case 32: // BIT
@@ -681,4 +677,10 @@ void goto_cmp() {
 
 void goto_store() {
   mem(addr_lo, addr_hi, result, 1);
+}
+
+void goto_memop() {
+  set_nz(result);
+  // Write result to A or back to memory.
+  nomem ? A = result : (cycles += 2, mem(addr_lo, addr_hi, result, 1));
 }
