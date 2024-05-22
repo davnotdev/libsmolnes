@@ -11,7 +11,7 @@ void render_callback(uint16_t out_fb[256 * 224], void* data);
 int main(int argc, char** argv) {
     //  Read the ROM
     char rombuf[1024 * 1024];
-    SDL_RWread(SDL_RWFromFile(argv[1], "rb"), rombuf, 1024 * 1024, 1);
+    SDL_RWread(SDL_RWFromFile(argv[1], "rb"), rombuf, 1024 * 800, 1);
 
     //  Init SDL
     SDL_Init(SDL_INIT_VIDEO);
@@ -27,7 +27,7 @@ int main(int argc, char** argv) {
 
     //  Init smolnes
     uint8_t button_states[8] = { 0 };
-    smolnes_init(rombuf, 1024 * 1024, button_states);
+    smolnes_init(rombuf, 1024 * 800, button_states);
 
     while (1) {
         //  Tick smolnes
