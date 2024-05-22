@@ -62,6 +62,10 @@ void goto_cmp();
 void goto_store();
 void goto_memop();
 
+void goto_cross();
+void goto_opcode();
+void goto_nomemop();
+
 // Read a byte from CHR ROM or CHR RAM.
 uint8_t *get_chr_byte(uint16_t a) {
   return &chrrom[chr[a >> chrbits] << chrbits | a & (1 << chrbits) - 1];
@@ -269,7 +273,8 @@ void smolnes_tick(void(*render_callback)(uint16_t[256 * 224], void*), void* data
     if (opcode & 128) { // LDY/CPY/CPX imm
       read_pc();
       nomem = 1;
-      goto nomemop;
+      goto_nomemop();
+      break;
     }
 
     switch (opcode >> 5) {
@@ -393,7 +398,7 @@ void smolnes_tick(void(*render_callback)(uint16_t[256 * 224], void*), void* data
     default: // ASL/ROL/LSR/ROR A
       nomem = 1;
       val = A;
-      goto nomemop;
+      goto_nomemop();
     }
     break;
 
@@ -403,24 +408,28 @@ void smolnes_tick(void(*render_callback)(uint16_t[256 * 224], void*), void* data
     addr_lo = mem(val, 0, 0, 0);
     addr_hi = mem(val + 1, 0, 0, 0);
     cycles += 4;
-    goto opcode;
+    goto_opcode();
+    break;
 
   case 4: case 5: case 6: // Zeropage
     addr_lo = read_pc();
     addr_hi = 0;
     cycles++;
-    goto opcode;
+    goto_opcode();
+    break;
 
   case 2: case 9: // Immediate
     read_pc();
     nomem = 1;
-    goto nomemop;
+    goto_nomemop();
+    break;
 
   case 12: case 13: case 14: // Absolute
     addr_lo = read_pc();
     addr_hi = read_pc();
     cycles += 2;
-    goto opcode;
+    goto_opcode();
+    break; 
 
   case 17: // Zeropage, Y-indexed
     addr_lo = mem(read_pc(), 0, 0, 0);
@@ -428,20 +437,23 @@ void smolnes_tick(void(*render_callback)(uint16_t[256 * 224], void*), void* data
     val = Y;
     tmp = opcode == 145; // STA always uses extra cycle.
     cycles++;
-    goto cross;
+    goto_cross();
+    break;
 
   case 20: case 21: case 22: // Zeropage, X-indexed
     addr_lo = read_pc() + ((opcode & 214) == 150 ? Y : X); // LDX/STX use Y
     addr_hi = 0;
     cycles += 2;
-    goto opcode;
+    goto_opcode();
+    break;
 
   case 25: // Absolute, Y-indexed.
     addr_lo = read_pc();
     addr_hi = read_pc();
     val = Y;
     tmp = opcode == 153; // STA always uses extra cycle.
-    goto cross;
+    goto_cross();
+    break;
 
   case 28: case 29: case 30: // Absolute, X-indexed.
     addr_lo = read_pc();
@@ -450,91 +462,8 @@ void smolnes_tick(void(*render_callback)(uint16_t[256 * 224], void*), void* data
     tmp = opcode == 157 ||      // STA always uses extra cycle.
                             // ASL/ROL/LSR/ROR/INC/DEC all uses extra cycle.
            opcode % 16 == 14 && opcode != 190;
-    // fallthrough
-  cross:
-    addr_hi += cross = addr_lo + val > 255;
-    addr_lo += val;
-    cycles += 2 + tmp | cross;
-    // fallthrough
 
-  opcode:
-    // Read from the given address into `val` for convenience below, except
-    // for the STA/STX/STY instructions, and JMP.
-    (opcode & 224) != 128 &&opcode != 76 ? val = mem(addr_lo, addr_hi, 0, 0)
-                                         : 0;
-
-  nomemop:
-    switch (opcode & 243) {
-    OP16(1) set_nz(A |= val);  // ORA
-    OP16(33) set_nz(A &= val); // AND
-    OP16(65) set_nz(A ^= val); // EOR
-
-    OP16(225) // SBC
-      val = ~val;
-      goto_add();
-
-    OP16(97) // ADC
-      goto_add();
-
-    OP16(2) // ASL
-      result = val * 2;
-      P = P & ~1 | val / 128;
-      goto_memop();
-
-    OP16(34) // ROL
-      result = val * 2 | P & 1;
-      P = P & ~1 | val / 128;
-      goto_memop();
-
-    OP16(66) // LSR
-      result = val / 2;
-      P = P & ~1 | val & 1;
-      goto_memop();
-
-    OP16(98) // ROR
-      result = val / 2 | P << 7;
-      P = P & ~1 | val & 1;
-      goto_memop();
-
-    OP16(194) // DEC
-      result = val - 1;
-      goto_memop();
-
-    OP16(226) // INC
-      result = val + 1;
-      goto_memop();
-      break;
-
-    case 32: // BIT
-      P = P & 61 | val & 192 | !(A & val) * 2;
-      break;
-
-    case 64: // JMP
-      PCL = addr_lo;
-      PCH = addr_hi;
-      cycles--;
-      break;
-
-    case 96: // JMP indirect
-      PCL = val;
-      PCH = mem(addr_lo + 1, addr_hi, 0, 0);
-      cycles++;
-
-    OP16(160) set_nz(Y = val); // LDY
-    OP16(161) set_nz(A = val); // LDA
-    OP16(162) set_nz(X = val); // LDX
-
-    OP16(128) result = Y; goto_store(); // STY
-    OP16(129) result = A; goto_store(); // STA
-    OP16(130) result = X;             // STX
-      goto_store();
-
-    OP16(192) result = Y; goto_cmp(); // CPY
-    OP16(193) result = A; goto_cmp(); // CMP
-    OP16(224) result = X;           // CPX
-      goto_cmp();
-      break;
-    }
+    goto_cross();
   }
 
   // Update PPU, which runs 3 times faster than CPU. Each CPU instruction
@@ -683,4 +612,93 @@ void goto_memop() {
   set_nz(result);
   // Write result to A or back to memory.
   nomem ? A = result : (cycles += 2, mem(addr_lo, addr_hi, result, 1));
+}
+
+void goto_cross() {
+  addr_hi += cross = addr_lo + val > 255;
+  addr_lo += val;
+  cycles += 2 + tmp | cross;
+  goto_opcode();
+}
+
+void goto_opcode() {
+  // Read from the given address into `val` for convenience below, except
+  // for the STA/STX/STY instructions, and JMP.
+  (opcode & 224) != 128 &&opcode != 76 ? val = mem(addr_lo, addr_hi, 0, 0)
+    : 0;
+  goto_nomemop();
+}
+
+void goto_nomemop() {
+  switch (opcode & 243) {
+    OP16(1) set_nz(A |= val);  // ORA
+    OP16(33) set_nz(A &= val); // AND
+    OP16(65) set_nz(A ^= val); // EOR
+
+    OP16(225) // SBC
+      val = ~val;
+    goto_add();
+
+    OP16(97) // ADC
+      goto_add();
+
+    OP16(2) // ASL
+      result = val * 2;
+    P = P & ~1 | val / 128;
+    goto_memop();
+
+    OP16(34) // ROL
+      result = val * 2 | P & 1;
+    P = P & ~1 | val / 128;
+    goto_memop();
+
+    OP16(66) // LSR
+      result = val / 2;
+    P = P & ~1 | val & 1;
+    goto_memop();
+
+    OP16(98) // ROR
+      result = val / 2 | P << 7;
+    P = P & ~1 | val & 1;
+    goto_memop();
+
+    OP16(194) // DEC
+      result = val - 1;
+    goto_memop();
+
+    OP16(226) // INC
+      result = val + 1;
+    goto_memop();
+    break;
+
+    case 32: // BIT
+    P = P & 61 | val & 192 | !(A & val) * 2;
+    break;
+
+    case 64: // JMP
+    PCL = addr_lo;
+    PCH = addr_hi;
+    cycles--;
+    break;
+
+    case 96: // JMP indirect
+    PCL = val;
+    PCH = mem(addr_lo + 1, addr_hi, 0, 0);
+    cycles++;
+
+    OP16(160) set_nz(Y = val); // LDY
+    OP16(161) set_nz(A = val); // LDA
+    OP16(162) set_nz(X = val); // LDX
+
+    OP16(128) result = Y; goto_store(); // STY
+    OP16(129) result = A; goto_store(); // STA
+    OP16(130) result = X;             // STX
+    goto_store();
+
+    OP16(192) result = Y; goto_cmp(); // CPY
+    OP16(193) result = A; goto_cmp(); // CMP
+    OP16(224) result = X;           // CPX
+    goto_cmp();
+    break;
+  }
 }
