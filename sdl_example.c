@@ -1,6 +1,8 @@
 #include <SDL2/SDL.h>
 #include "smolnes.h"
 
+#define ROM_SIZE 1024 * 800
+
 typedef struct {
     SDL_Renderer* renderer;
     SDL_Texture* texture;
@@ -10,8 +12,13 @@ void render_callback(uint16_t out_fb[256 * 224], void* data);
 
 int main(int argc, char** argv) {
     //  Read the ROM
-    char rombuf[1024 * 1024];
-    SDL_RWread(SDL_RWFromFile(argv[1], "rb"), rombuf, 1024 * 800, 1);
+    char signed_rombuf[ROM_SIZE];
+    SDL_RWread(SDL_RWFromFile(argv[1], "rb"), signed_rombuf, 1024 * 800, 1);
+
+    uint8_t rombuf[ROM_SIZE];
+    for (int i = 0; i < ROM_SIZE; i++) {
+        rombuf[i] = (uint8_t)signed_rombuf[i];
+    }
 
     //  Init SDL
     SDL_Init(SDL_INIT_VIDEO);
@@ -26,8 +33,9 @@ int main(int argc, char** argv) {
     key_state = (uint8_t*)SDL_GetKeyboardState(0);
 
     //  Init smolnes
+    uint16_t frame_buffer[256 * 224];
     uint8_t button_states[8] = { 0 };
-    smolnes_init(rombuf, 1024 * 800, button_states);
+    smolnes_init(rombuf, button_states);
 
     while (1) {
         //  Tick smolnes
@@ -43,7 +51,7 @@ int main(int argc, char** argv) {
         RenderData data;
         data.renderer = renderer;
         data.texture = texture;
-        smolnes_tick(render_callback, &data);
+        smolnes_tick(frame_buffer, render_callback, &data);
     }
     return 0;
 }

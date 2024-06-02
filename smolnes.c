@@ -1,10 +1,5 @@
 #include <stdint.h>
 
-//  This will be enough to run Kirby's Adventure, on
-#ifndef MAX_ROM_SIZE
-#define MAX_ROM_SIZE 1024 * 800
-#endif
-
 #define PULL mem(++S, 1, 0, 0)
 #define PUSH(x) mem(S--, 1, x, 1);
 
@@ -42,7 +37,7 @@ uint8_t *rom, *chrrom,                // Points to the start of PRG/CHR ROM
     mmc3_chrprg[8], mmc3_bits,         // Mapper 4 (MMC3) registers
     mmc3_irq, mmc3_latch,              //
     chrbank0, chrbank1, prgbank,       // Current PRG/CHR bank
-    rombuf[MAX_ROM_SIZE],              // Buffer to read ROM file into
+    *rombuf,             // Buffer to read ROM file into
     *key_state;
 
 uint16_t scany,          // Scanline Y
@@ -51,9 +46,7 @@ uint16_t scany,          // Scanline Y
     dot,                 // Horizontal position of PPU, from 0..340
     atb,                 // Attribute byte
     shift_hi, shift_lo,  // Pattern table shift registers
-    cycles,              // Cycle count for current instruction
-    frame_buffer[61440]; // 256x240 pixel frame buffer. Top and bottom 8 rows
-                         // are not drawn.
+    cycles;              // Cycle count for current instruction
 
 int shift_at = 0;
 
@@ -235,10 +228,8 @@ uint8_t read_pc() {
 // Set N (negative) and Z (zero) flags of `P` register, based on `val`.
 uint8_t set_nz(uint8_t val) { return P = P & ~130 | val & 128 | !val * 2; }
 
-void smolnes_init(const char* p_rom, uint64_t rom_size, uint8_t p_button_states[8]) {
-  for (int i = 0; i < rom_size; i++) {
-    rombuf[i] = p_rom[i];
-  }
+void smolnes_init(uint8_t* p_rom, uint8_t p_button_states[8]) {
+  rombuf = p_rom;
 
   // Start PRG0 after 16-byte header.
   rom = rombuf + 16;
@@ -264,7 +255,7 @@ void smolnes_init(const char* p_rom, uint64_t rom_size, uint8_t p_button_states[
   key_state = p_button_states;
 }
 
-void smolnes_tick(void(*render_callback)(uint16_t[256 * 224], void*), void* data) {
+void smolnes_tick(uint16_t frame_buffer[256 * 224], void (*render_callback)(uint16_t[256 * 224], void *), void *data) {
   cycles = nomem = 0;
   if (nmi_irq) {
     goto_nmi_irq();
