@@ -1,5 +1,5 @@
 .PHONY: all clean
-all: libsmolnes.a
+all: libsmolnes.a sdl_example
 
 WARN=-Wall \
      -Wno-parentheses \

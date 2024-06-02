@@ -10,11 +10,16 @@ Please check go check it out.
 
 ## Usage
 
-```
+```sh
+# Build Options
 make
 make sdl_example
+make all
 make clean
+
+# Our example
+./sdl_example
 ```
 
-Have fun!
+Please see the example using SDL. Have fun!
 
